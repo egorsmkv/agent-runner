@@ -49,6 +49,9 @@ Rules:
 - Prefer more parallel batches over one long sequence when scopes touch different domains or files.
 - Do not put scopes in the same parallel group when they likely edit the same files, depend on the same unfinished API, or share acceptance criteria.
 - Preserve acceptance-criteria references when the PRD has them.
+- Quote string-array items that contain colons, brackets, braces, backticks, or
+  other YAML syntax characters. For example, write `"US-003: Parse fields: title"`
+  instead of `US-003: Parse fields: title`.
 - Put focused quality gates on each scope. Use PRD quality gates if present.
 - Use only these scope statuses: not_started, in_progress, needs_repair, blocked, complete.
 - Use only these plan/final statuses: not_complete, blocked, complete.

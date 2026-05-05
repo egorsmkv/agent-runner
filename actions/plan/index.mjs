@@ -32,8 +32,13 @@ export function resolvePlanPaths(repoRoot, prdPath) {
 export async function readPlan(planPath) {
   try {
     const rawPlan = await readFile(planPath, 'utf8');
+    const repairedRawPlan = repairPlanStringArrayItems(rawPlan);
     try {
-      return normalizePlan(YAML.parse(rawPlan));
+      const plan = normalizePlan(YAML.parse(repairedRawPlan));
+      if (repairedRawPlan !== rawPlan) {
+        await writePlan(planPath, plan);
+      }
+      return plan;
     } catch (error) {
       const repairedPlan = parseRepairedPlanYaml(rawPlan, error);
       await writePlan(planPath, repairedPlan);
@@ -55,11 +60,11 @@ export async function writePlan(planPath, plan) {
 
 export function extractPlanFromText(text) {
   const fenced = text.match(/```(?:ya?ml)?\s*([\s\S]*?)```/i)?.[1] ?? text;
-  return normalizePlan(YAML.parse(fenced));
+  return normalizePlan(YAML.parse(repairPlanStringArrayItems(fenced)));
 }
 
 function parseRepairedPlanYaml(rawPlan, originalError) {
-  const repairedPlan = repairTimestampProgressItems(rawPlan);
+  const repairedPlan = repairPlanStringArrayItems(rawPlan);
 
   if (repairedPlan === rawPlan) {
     throw originalError;
@@ -77,6 +82,66 @@ export function repairTimestampProgressItems(rawPlan) {
     /^(\s*)-\s+(\d{4}-\d{2}-\d{2}T[^\n'"]*)$/gm,
     (_match, indent, value) => `${indent}- >-\n${indent}  ${value}`,
   );
+}
+
+export function repairPlanStringArrayItems(rawPlan) {
+  const stringArrayKeys = new Set([
+    'acceptanceCriteria',
+    'qualityGates',
+    'dependsOn',
+    'ownedFiles',
+    'temporaryFollowUps',
+    'progress',
+    'focused',
+    'final',
+  ]);
+  const lines = repairTimestampProgressItems(rawPlan).split('\n');
+  const arrayStack = [];
+
+  return lines
+    .map((line) => {
+      const indentation = line.match(/^(\s*)/)?.[1].length ?? 0;
+
+      while (arrayStack.length > 0 && indentation <= arrayStack[arrayStack.length - 1].indent) {
+        arrayStack.pop();
+      }
+
+      const keyMatch = line.match(/^(\s*)([A-Za-z][A-Za-z0-9]*):\s*(?:#.*)?$/);
+      if (keyMatch && stringArrayKeys.has(keyMatch[2])) {
+        arrayStack.push({ indent: keyMatch[1].length });
+        return line;
+      }
+
+      const activeArray = arrayStack[arrayStack.length - 1];
+      if (!activeArray || indentation <= activeArray.indent) {
+        return line;
+      }
+
+      const itemMatch = line.match(/^(\s*)-\s+(.+?)\s*$/);
+      if (!itemMatch) {
+        return line;
+      }
+
+      const [, itemIndent, rawValue] = itemMatch;
+      if (isQuotedYamlString(rawValue) || rawValue === '[]' || rawValue === '{}') {
+        return line;
+      }
+
+      if (!needsQuotedYamlString(rawValue)) {
+        return line;
+      }
+
+      return `${itemIndent}- ${JSON.stringify(rawValue)}`;
+    })
+    .join('\n');
+}
+
+function isQuotedYamlString(value) {
+  return value.startsWith('"') || value.startsWith("'") || value.startsWith('|') || value.startsWith('>');
+}
+
+function needsQuotedYamlString(value) {
+  return /:\s/.test(value) || /[`[\]{}]/.test(value) || /^[!&*%@]/.test(value);
 }
 
 export function normalizePlan(plan) {

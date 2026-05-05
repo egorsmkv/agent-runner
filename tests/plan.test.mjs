@@ -13,6 +13,7 @@ import {
   isExecutablePlanScope,
   normalizePlan,
   readPlan,
+  repairPlanStringArrayItems,
   repairTimestampProgressItems,
   selectParallelPlanScopes,
   selectNextPlanScope,
@@ -271,6 +272,40 @@ describe('agent YAML plan helpers', () => {
     expect(repairedYaml).toContain('progress:');
     expect(repairedYaml).toContain('as-is: `yarn types` passed');
     expect(repairTimestampProgressItems(brokenYaml)).toContain('- >-');
+  });
+
+  it('extracts generated plan criteria with unquoted colons as strings', () => {
+    const brokenYaml = planYaml.replace(
+      '      - US-001',
+      '      - US-001: Parse common RSS and Atom fields into a stable item shape: title, link, date',
+    );
+
+    const plan = extractPlanFromText(`\`\`\`yaml\n${brokenYaml}\`\`\``);
+
+    expect(plan.scopes[0].acceptanceCriteria).toEqual([
+      'US-001: Parse common RSS and Atom fields into a stable item shape: title, link, date',
+    ]);
+    expect(repairPlanStringArrayItems(brokenYaml)).toContain(
+      '"US-001: Parse common RSS and Atom fields into a stable item shape: title, link, date"',
+    );
+  });
+
+  it('rewrites existing plans whose unquoted string-array items parsed as mappings', async () => {
+    const brokenYaml = planYaml.replace(
+      '      - US-001',
+      '      - US-001: Return clear validation errors',
+    );
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'agent-plan-'));
+    const planPath = path.join(tempDir, 'plan.yaml');
+    await writeFile(planPath, brokenYaml);
+
+    const plan = await readPlan(planPath);
+    const repairedYaml = await readFile(planPath, 'utf8');
+
+    expect(plan.scopes[0].acceptanceCriteria).toEqual([
+      'US-001: Return clear validation errors',
+    ]);
+    expect(repairedYaml).toContain('"US-001: Return clear validation errors"');
   });
 
   it('builds a planning prompt that asks for YAML only', async () => {
