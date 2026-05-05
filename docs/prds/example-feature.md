@@ -9,11 +9,11 @@ normalized article cards in the browser.
 
 ## Requirements
 
-- [+] US-001: Create a Node HTTP API that accepts an RSS feed URL and returns
+- [ ] US-001: Create a Node HTTP API that accepts an RSS feed URL and returns
   normalized JSON news items.
 - [ ] US-002: Validate feed URLs before fetching and return clear client errors
   for missing, invalid, unreachable, or non-RSS feeds.
-- [+] US-003: Parse common RSS and Atom fields into a stable item shape:
+- [ ] US-003: Parse common RSS and Atom fields into a stable item shape:
   `title`, `link`, `description`, `publishedAt`, and `source`.
 - [ ] US-004: Build a React UI with a feed URL input, a few example feed
   shortcuts, loading and error states, and a refresh action.
