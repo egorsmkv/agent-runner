@@ -65,11 +65,12 @@ the React app and avoid importing application code from `src/`.
 - Top-level crashes are appended to `.agent/error.log`; non-interrupt crashes
   restart once through `resume` when saved state exists.
 - Runtime files and logs stay under `.agent/` and are gitignored.
-- Source implementation runs in an agent-owned git worktree under
-  `.agent/worktrees/<prd-slug>` on branch `agent/<prd-slug>`. Keep `.agent`
-  state in the main checkout, but run Codex, reviews, quality gates, Markdown
-  sync, and scope commits from the agent worktree so the user can keep editing
-  the main checkout manually.
+- Source implementation runs in an external agent-owned git worktree under a
+  sibling `.agent-worktrees/<repo-id>/` directory on branch `agent/<prd-slug>`.
+  Keep `.agent` state in the main checkout, but run Codex, reviews, quality
+  gates, Markdown sync, and scope commits from the agent worktree so the user can
+  keep editing the main checkout manually without seeing a full duplicate source
+  checkout under `.agent/`.
 - Codex implementation passes treat YAML state as read-only. The runner and
   review actions own state mutations so execution does not depend on Codex being
   able to write outside the source worktree.

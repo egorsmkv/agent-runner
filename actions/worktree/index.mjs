@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { lstat, mkdir, readlink, stat, symlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -6,13 +7,14 @@ import { planSlugForPrd } from '../plan/index.mjs';
 
 export function resolveAgentWorktree({ repoRoot, prdPath, scopeId = null }) {
   const slug = planSlugForPrd(prdPath);
+  const worktreeBase = resolveExternalWorktreeBase(repoRoot);
 
   return {
     slug,
     branch: scopeId ? `agent/${slug}-${scopeId}` : `agent/${slug}`,
     worktreeRoot: scopeId
-      ? path.join(repoRoot, '.agent', 'worktrees', 'scopes', slug, scopeId)
-      : path.join(repoRoot, '.agent', 'worktrees', slug),
+      ? path.join(worktreeBase, 'scopes', slug, scopeId)
+      : path.join(worktreeBase, slug),
   };
 }
 
@@ -39,21 +41,21 @@ export async function ensureAgentWorktree({
     return worktree;
   }
 
-  if (scopeId) {
-    const legacyRoot = path.join(repoRoot, '.agent', 'worktrees', worktree.slug, scopeId);
+  const legacyRoot = await findLegacyWorktree({ repoRoot, slug: worktree.slug, scopeId });
 
-    if (await isGitWorktree(legacyRoot)) {
-      await mkdir(path.dirname(worktree.worktreeRoot), { recursive: true });
-      await runGit(repoRoot, ['worktree', 'move', legacyRoot, worktree.worktreeRoot]);
-      await ensureWorktreeNodeTooling({ repoRoot, worktreeRoot: worktree.worktreeRoot });
-      log.stage?.('Agent worktree', [
-        ['path', path.relative(repoRoot, worktree.worktreeRoot)],
-        ['branch', worktree.branch],
-        ['mode', 'migrated legacy scope path'],
-      ]);
-      return worktree;
-    }
+  if (legacyRoot) {
+    await mkdir(path.dirname(worktree.worktreeRoot), { recursive: true });
+    await runGit(repoRoot, ['worktree', 'move', legacyRoot, worktree.worktreeRoot]);
+    await ensureWorktreeNodeTooling({ repoRoot, worktreeRoot: worktree.worktreeRoot });
+    log.stage?.('Agent worktree', [
+      ['path', path.relative(repoRoot, worktree.worktreeRoot)],
+      ['branch', worktree.branch],
+      ['mode', 'migrated out of repo .agent directory'],
+    ]);
+    return worktree;
   }
+
+  await pruneStaleLegacyWorktrees({ repoRoot, slug: worktree.slug, scopeId });
 
   await mkdir(path.dirname(worktree.worktreeRoot), { recursive: true });
   const branchExists = await gitBranchExists(repoRoot, worktree.branch);
@@ -70,6 +72,78 @@ export async function ensureAgentWorktree({
   ]);
 
   return worktree;
+}
+
+export function resolveExternalWorktreeBase(repoRoot) {
+  const resolvedRoot = path.resolve(repoRoot);
+  const repoName = path.basename(resolvedRoot) || 'repo';
+  const repoHash = createHash('sha1').update(resolvedRoot).digest('hex').slice(0, 10);
+
+  return path.join(path.dirname(resolvedRoot), '.agent-worktrees', `${repoName}-${repoHash}`);
+}
+
+async function findLegacyWorktree({ repoRoot, slug, scopeId }) {
+  const candidates = legacyWorktreeCandidates({ repoRoot, slug, scopeId });
+
+  for (const candidate of candidates) {
+    if (await isGitWorktree(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function pruneStaleLegacyWorktrees({ repoRoot, slug, scopeId }) {
+  const legacyCandidates = legacyWorktreeCandidates({ repoRoot, slug, scopeId });
+  const registeredWorktrees = await listRegisteredWorktrees(repoRoot);
+
+  if (
+    registeredWorktrees.some(
+      (worktree) =>
+        legacyCandidates.some((candidate) => sameOrEquivalentLegacyPath(worktree.path, candidate)) &&
+        worktree.prunable,
+    )
+  ) {
+    await runGit(repoRoot, ['worktree', 'prune']);
+  }
+}
+
+function sameOrEquivalentLegacyPath(registeredPath, candidatePath) {
+  if (registeredPath === candidatePath) {
+    return true;
+  }
+
+  const marker = `${path.sep}.agent${path.sep}worktrees${path.sep}`;
+  const candidateIndex = candidatePath.indexOf(marker);
+
+  return candidateIndex >= 0 && registeredPath.endsWith(candidatePath.slice(candidateIndex));
+}
+
+function legacyWorktreeCandidates({ repoRoot, slug, scopeId }) {
+  return scopeId
+    ? [
+        path.join(repoRoot, '.agent', 'worktrees', 'scopes', slug, scopeId),
+        path.join(repoRoot, '.agent', 'worktrees', slug, scopeId),
+      ]
+    : [path.join(repoRoot, '.agent', 'worktrees', slug)];
+}
+
+async function listRegisteredWorktrees(repoRoot) {
+  const result = await runGit(repoRoot, ['worktree', 'list', '--porcelain']);
+  const worktrees = [];
+  let current = null;
+
+  for (const line of result.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { path: line.slice('worktree '.length), prunable: false };
+      worktrees.push(current);
+    } else if (line.startsWith('prunable ') && current) {
+      current.prunable = true;
+    }
+  }
+
+  return worktrees;
 }
 
 async function syncCleanWorktreeToParentHead({ repoRoot, worktreeRoot, log }) {

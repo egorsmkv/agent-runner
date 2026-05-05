@@ -1,9 +1,9 @@
 # Agent Runner Developer Guide
 
 This repository contains the repo-local `yarn agent` CLI. It turns a Markdown
-PRD into a YAML execution plan, runs Codex against scoped work items, verifies
-the resulting diff, runs quality gates, syncs completed checklist items back to
-the PRD, and creates local commits.
+PRD into a YAML execution plan, runs Codex against scoped work items in external
+agent-owned git worktrees, verifies the resulting diff, runs quality gates,
+syncs completed checklist items back to the PRD, and creates local commits.
 
 The runner is intended for local developer use. It never pushes changes.
 
@@ -57,7 +57,8 @@ Run plan review and print the result, then restore the original YAML plan.
 - `--file`, `-f`: Markdown PRD file to run or review.
 - `--once`: Execute at most one scope.
 - `--parallel <n>`: Run up to `n` independent scopes at the same time. Parallel
-  execution uses per-scope worktrees under `.agent/worktrees/scopes/`.
+  execution uses per-scope worktrees in the external `.agent-worktrees/`
+  directory.
 - `--verbose-json`: Print raw Codex JSONL events.
 - `--dry-run`: Supported by `plan-review`; restores the original plan after the
   review.
@@ -68,15 +69,22 @@ requirement.
 
 ## Runtime Files
 
-All runner-owned runtime files live under `.agent/`, which is gitignored:
+Runner-owned state files live under `.agent/`, which is gitignored:
 
 - `.agent/*.yml` or `.agent/**/*.yml`: YAML execution plans and run state.
-- `.agent/worktrees/<prd-slug>`: agent-owned implementation worktree for normal
-  serial execution.
-- `.agent/worktrees/scopes/<prd-slug>/<scope-id>`: per-scope worktrees for
-  parallel execution.
 - `.agent/**/context/`: generated scope context bundles passed to Codex.
 - `.agent/error.log`: appended top-level crash log.
+
+Agent-owned source worktrees live outside the repo in a sibling
+`.agent-worktrees/<repo-id>/` directory:
+
+- `.agent-worktrees/<repo-id>/<prd-slug>`: implementation worktree for normal
+  serial execution.
+- `.agent-worktrees/<repo-id>/scopes/<prd-slug>/<scope-id>`: per-scope worktrees
+  for parallel execution.
+
+Keeping source worktrees outside the project prevents editors from showing a
+full duplicate checkout under `.agent/`.
 
 Markdown PRDs are human-facing input. After a YAML plan exists, the runner uses
 the YAML state as the execution source of truth. Markdown checklist markers are
@@ -86,7 +94,7 @@ updated only after a scope passes its gates.
 
 1. `run` reads the Markdown PRD and generates or replaces the YAML plan.
 2. The runner selects the next ready scope from YAML.
-3. It creates or reuses an agent-owned git worktree and branch named
+3. It creates or reuses an external agent-owned git worktree and branch named
    `agent/<prd-slug>`.
 4. A scope context bundle is generated so Codex can focus on the active scope
    without rereading the full PRD and plan on every pass.
@@ -126,8 +134,9 @@ checkout when possible. If the parent checkout is dirty, scope work can still be
 committed inside the agent worktree, but applying it back to the parent checkout
 may be blocked.
 
-Avoid destructive git cleanup under `.agent/worktrees/` while a run is active.
-Use `yarn agent resume` when continuing an interrupted run.
+Avoid destructive git cleanup under the sibling `.agent-worktrees/` directory
+while a run is active. Use `yarn agent resume` when continuing an interrupted
+run.
 
 ## Developing The Runner
 

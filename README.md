@@ -4,7 +4,7 @@ Made by Oleksii Bondarenko.
 
 Agent Runner is a repo-local `yarn agent` CLI for executing Markdown PRDs with
 Codex. It converts a human-readable PRD into YAML execution state, runs scoped
-implementation passes in agent-owned git worktrees, verifies the resulting diff,
+implementation passes in external agent-owned git worktrees, verifies the resulting diff,
 runs quality gates, syncs completed checklist items back to Markdown, and creates
 local commits.
 
@@ -86,7 +86,8 @@ stale progress notes.
 
 1. `run` reads the Markdown PRD and generates YAML state under `.agent/`.
 2. The runner selects the next ready scope from YAML.
-3. Codex works in `.agent/worktrees/<prd-slug>` on branch `agent/<prd-slug>`.
+3. Codex works in a sibling `.agent-worktrees/<repo-id>/...` checkout on branch
+   `agent/<prd-slug>`.
 4. Scope review checks whether the diff matches the active scope.
 5. Focused quality gates run in the worktree.
 6. Completed checklist markers are synced back to the Markdown PRD.
@@ -94,8 +95,9 @@ stale progress notes.
    checkout when the parent checkout is clean.
 8. Final plan review and final quality gates run before acceptance.
 
-All runtime state, logs, generated context, and agent worktrees stay under
-`.agent/`, which is gitignored.
+Runtime state and logs stay under `.agent/`, which is gitignored. Agent source
+worktrees live outside the repo in a sibling `.agent-worktrees/` directory so
+editors do not show a full duplicate checkout inside the project tree.
 
 ## Development Notes
 
