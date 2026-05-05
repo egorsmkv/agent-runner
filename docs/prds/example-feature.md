@@ -27,6 +27,8 @@ normalized article cards in the browser.
 ## Suggested Implementation
 
 - Use a Python backend endpoint such as `GET /api/feed?url=<encoded-feed-url>`.
+- Use `uv` for Python environment setup, including initializing a local `.venv`
+  before installing backend dependencies.
 - Keep RSS fetching and parsing logic isolated from the HTTP route handler.
 - Serve the React app from the same local development workflow when practical.
 - Prefer a maintained Python RSS parsing package over hand-rolled XML parsing.
@@ -35,7 +37,7 @@ normalized article cards in the browser.
 
 ## Quality Gates
 
-- pytest
+- uv run pytest
 - yarn build
 
 ## Example Feeds
@@ -46,7 +48,8 @@ normalized article cards in the browser.
 
 ## Acceptance Notes
 
-- A developer can start the app locally and load at least one example feed.
+- A developer can initialize the Python virtual environment with `uv`, start the
+  app locally, and load at least one example feed.
 - Invalid input does not crash the app or server.
 - Feed fetch failures are visible in the UI.
 - The API response does not expose raw parser internals.
