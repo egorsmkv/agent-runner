@@ -1,0 +1,16 @@
+{
+  "name": "agent-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "agent": "node index.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5"
+  }
+}
