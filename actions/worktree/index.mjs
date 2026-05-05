@@ -7,7 +7,7 @@ import { planSlugForPrd } from '../plan/index.mjs';
 
 export function resolveAgentWorktree({ repoRoot, prdPath, scopeId = null }) {
   const slug = planSlugForPrd(prdPath);
-  const worktreeBase = resolveExternalWorktreeBase(repoRoot);
+  const worktreeBase = resolveAgentWorktreeBase(repoRoot);
 
   return {
     slug,
@@ -41,21 +41,21 @@ export async function ensureAgentWorktree({
     return worktree;
   }
 
-  const legacyRoot = await findLegacyWorktree({ repoRoot, slug: worktree.slug, scopeId });
+  const migratableRoot = await findMigratableWorktree({ repoRoot, slug: worktree.slug, scopeId });
 
-  if (legacyRoot) {
+  if (migratableRoot) {
     await mkdir(path.dirname(worktree.worktreeRoot), { recursive: true });
-    await runGit(repoRoot, ['worktree', 'move', legacyRoot, worktree.worktreeRoot]);
+    await runGit(repoRoot, ['worktree', 'move', migratableRoot, worktree.worktreeRoot]);
     await ensureWorktreeNodeTooling({ repoRoot, worktreeRoot: worktree.worktreeRoot });
     log.stage?.('Agent worktree', [
       ['path', path.relative(repoRoot, worktree.worktreeRoot)],
       ['branch', worktree.branch],
-      ['mode', 'migrated out of repo .agent directory'],
+      ['mode', 'migrated to .agent/worktrees'],
     ]);
     return worktree;
   }
 
-  await pruneStaleLegacyWorktrees({ repoRoot, slug: worktree.slug, scopeId });
+  await pruneStaleMigratableWorktrees({ repoRoot, slug: worktree.slug, scopeId });
 
   await mkdir(path.dirname(worktree.worktreeRoot), { recursive: true });
   const branchExists = await gitBranchExists(repoRoot, worktree.branch);
@@ -74,6 +74,10 @@ export async function ensureAgentWorktree({
   return worktree;
 }
 
+export function resolveAgentWorktreeBase(repoRoot) {
+  return path.join(repoRoot, '.agent', 'worktrees');
+}
+
 export function resolveExternalWorktreeBase(repoRoot) {
   const resolvedRoot = path.resolve(repoRoot);
   const repoName = path.basename(resolvedRoot) || 'repo';
@@ -82,8 +86,8 @@ export function resolveExternalWorktreeBase(repoRoot) {
   return path.join(path.dirname(resolvedRoot), '.agent-worktrees', `${repoName}-${repoHash}`);
 }
 
-async function findLegacyWorktree({ repoRoot, slug, scopeId }) {
-  const candidates = legacyWorktreeCandidates({ repoRoot, slug, scopeId });
+async function findMigratableWorktree({ repoRoot, slug, scopeId }) {
+  const candidates = migratableWorktreeCandidates({ repoRoot, slug, scopeId });
 
   for (const candidate of candidates) {
     if (await isGitWorktree(candidate)) {
@@ -94,14 +98,17 @@ async function findLegacyWorktree({ repoRoot, slug, scopeId }) {
   return null;
 }
 
-async function pruneStaleLegacyWorktrees({ repoRoot, slug, scopeId }) {
-  const legacyCandidates = legacyWorktreeCandidates({ repoRoot, slug, scopeId });
+async function pruneStaleMigratableWorktrees({ repoRoot, slug, scopeId }) {
+  const candidates = [
+    ...migratableWorktreeCandidates({ repoRoot, slug, scopeId }),
+    ...canonicalWorktreeCandidates({ repoRoot, slug, scopeId }),
+  ];
   const registeredWorktrees = await listRegisteredWorktrees(repoRoot);
 
   if (
     registeredWorktrees.some(
       (worktree) =>
-        legacyCandidates.some((candidate) => sameOrEquivalentLegacyPath(worktree.path, candidate)) &&
+        candidates.some((candidate) => sameOrEquivalentWorktreePath(worktree.path, candidate)) &&
         worktree.prunable,
     )
   ) {
@@ -109,24 +116,41 @@ async function pruneStaleLegacyWorktrees({ repoRoot, slug, scopeId }) {
   }
 }
 
-function sameOrEquivalentLegacyPath(registeredPath, candidatePath) {
+function sameOrEquivalentWorktreePath(registeredPath, candidatePath) {
   if (registeredPath === candidatePath) {
     return true;
   }
 
   const marker = `${path.sep}.agent${path.sep}worktrees${path.sep}`;
   const candidateIndex = candidatePath.indexOf(marker);
+  const externalMarker = `${path.sep}.agent-worktrees${path.sep}`;
+  const externalCandidateIndex = candidatePath.indexOf(externalMarker);
 
-  return candidateIndex >= 0 && registeredPath.endsWith(candidatePath.slice(candidateIndex));
+  return (
+    (candidateIndex >= 0 && registeredPath.endsWith(candidatePath.slice(candidateIndex))) ||
+    (externalCandidateIndex >= 0 &&
+      registeredPath.endsWith(candidatePath.slice(externalCandidateIndex)))
+  );
 }
 
-function legacyWorktreeCandidates({ repoRoot, slug, scopeId }) {
+function canonicalWorktreeCandidates({ repoRoot, slug, scopeId }) {
+  const worktreeBase = resolveAgentWorktreeBase(repoRoot);
+
+  return scopeId
+    ? [path.join(worktreeBase, 'scopes', slug, scopeId)]
+    : [path.join(worktreeBase, slug)];
+}
+
+function migratableWorktreeCandidates({ repoRoot, slug, scopeId }) {
+  const externalBase = resolveExternalWorktreeBase(repoRoot);
+
   return scopeId
     ? [
-        path.join(repoRoot, '.agent', 'worktrees', 'scopes', slug, scopeId),
         path.join(repoRoot, '.agent', 'worktrees', slug, scopeId),
+        path.join(externalBase, 'scopes', slug, scopeId),
+        path.join(externalBase, slug, scopeId),
       ]
-    : [path.join(repoRoot, '.agent', 'worktrees', slug)];
+    : [path.join(externalBase, slug)];
 }
 
 async function listRegisteredWorktrees(repoRoot) {

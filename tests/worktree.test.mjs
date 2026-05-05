@@ -11,13 +11,14 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureAgentWorktree,
   resolveAgentWorktree,
+  resolveAgentWorktreeBase,
   resolveExternalWorktreeBase,
 } from '../actions/worktree/index.mjs';
 
 const execFileAsync = promisify(execFile);
 
 describe('agent worktree action', () => {
-  it('creates and reuses an external worktree for the PRD', async () => {
+  it('creates and reuses an in-repo .agent worktree for the PRD', async () => {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'agent-worktree-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.email', 'agent@example.com'], { cwd: repoRoot });
@@ -33,7 +34,7 @@ describe('agent worktree action', () => {
     await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoRoot });
 
     const resolved = resolveAgentWorktree({ repoRoot, prdPath });
-    const worktreeBase = resolveExternalWorktreeBase(repoRoot);
+    const worktreeBase = resolveAgentWorktreeBase(repoRoot);
     const first = await ensureAgentWorktree({ repoRoot, prdPath, log: () => {} });
     const second = await ensureAgentWorktree({ repoRoot, prdPath, log: () => {} });
     const { stdout } = await execFileAsync('git', ['branch', '--show-current'], {
@@ -46,7 +47,7 @@ describe('agent worktree action', () => {
     expect(first).toEqual(resolved);
     expect(second).toEqual(first);
     expect(first.worktreeRoot).toBe(path.join(worktreeBase, 'example-prd'));
-    expect(first.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(false);
+    expect(first.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(true);
     expect(stdout.trim()).toBe('agent/example-prd');
     expect(binLink).toBe(path.join(repoRoot, 'node_modules', '.bin'));
     expect(reactLink).toBe(path.join(repoRoot, 'node_modules', 'react'));
@@ -59,7 +60,7 @@ describe('agent worktree action', () => {
 
     const prdWorktree = resolveAgentWorktree({ repoRoot, prdPath });
     const scopeWorktree = resolveAgentWorktree({ repoRoot, prdPath, scopeId: 'scope-2' });
-    const worktreeBase = resolveExternalWorktreeBase(repoRoot);
+    const worktreeBase = resolveAgentWorktreeBase(repoRoot);
 
     expect(prdWorktree.worktreeRoot).toBe(path.join(worktreeBase, 'example-prd'));
     expect(scopeWorktree.worktreeRoot).toBe(
@@ -150,7 +151,7 @@ describe('agent worktree action', () => {
     expect(worktreeHead).toBe(originalWorktreeHead);
   });
 
-  it('migrates legacy PRD worktrees out of the repo .agent folder', async () => {
+  it('migrates external PRD worktrees back into the repo .agent folder', async () => {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'agent-worktree-migrate-prd-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.email', 'agent@example.com'], { cwd: repoRoot });
@@ -162,11 +163,11 @@ describe('agent worktree action', () => {
     await execFileAsync('git', ['add', '.'], { cwd: repoRoot });
     await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoRoot });
 
-    const legacyRoot = path.join(repoRoot, '.agent', 'worktrees', 'example-prd');
-    await mkdir(path.dirname(legacyRoot), { recursive: true });
+    const externalRoot = path.join(resolveExternalWorktreeBase(repoRoot), 'example-prd');
+    await mkdir(path.dirname(externalRoot), { recursive: true });
     await execFileAsync(
       'git',
-      ['worktree', 'add', '-b', 'agent/example-prd', legacyRoot, 'HEAD'],
+      ['worktree', 'add', '-b', 'agent/example-prd', externalRoot, 'HEAD'],
       { cwd: repoRoot },
     );
 
@@ -179,15 +180,13 @@ describe('agent worktree action', () => {
       cwd: resolved.worktreeRoot,
     });
 
-    await expect(stat(legacyRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(resolved.worktreeRoot).toBe(
-      path.join(resolveExternalWorktreeBase(repoRoot), 'example-prd'),
-    );
-    expect(resolved.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(false);
+    await expect(stat(externalRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(resolved.worktreeRoot).toBe(path.join(repoRoot, '.agent', 'worktrees', 'example-prd'));
+    expect(resolved.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(true);
     expect(stdout.trim()).toBe('agent/example-prd');
   });
 
-  it('prunes stale legacy PRD worktree registrations before creating the external worktree', async () => {
+  it('prunes stale external PRD worktree registrations before creating the .agent worktree', async () => {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'agent-worktree-prune-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.email', 'agent@example.com'], { cwd: repoRoot });
@@ -199,14 +198,14 @@ describe('agent worktree action', () => {
     await execFileAsync('git', ['add', '.'], { cwd: repoRoot });
     await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoRoot });
 
-    const legacyRoot = path.join(repoRoot, '.agent', 'worktrees', 'example-prd');
-    await mkdir(path.dirname(legacyRoot), { recursive: true });
+    const externalRoot = path.join(resolveExternalWorktreeBase(repoRoot), 'example-prd');
+    await mkdir(path.dirname(externalRoot), { recursive: true });
     await execFileAsync(
       'git',
-      ['worktree', 'add', '-b', 'agent/example-prd', legacyRoot, 'HEAD'],
+      ['worktree', 'add', '-b', 'agent/example-prd', externalRoot, 'HEAD'],
       { cwd: repoRoot },
     );
-    await rm(legacyRoot, { recursive: true, force: true });
+    await rm(externalRoot, { recursive: true, force: true });
 
     const resolved = await ensureAgentWorktree({
       repoRoot,
@@ -217,13 +216,11 @@ describe('agent worktree action', () => {
       cwd: resolved.worktreeRoot,
     });
 
-    expect(resolved.worktreeRoot).toBe(
-      path.join(resolveExternalWorktreeBase(repoRoot), 'example-prd'),
-    );
+    expect(resolved.worktreeRoot).toBe(path.join(repoRoot, '.agent', 'worktrees', 'example-prd'));
     expect(stdout.trim()).toBe('agent/example-prd');
   });
 
-  it('migrates legacy nested per-scope worktrees to the external scope folder', async () => {
+  it('migrates legacy nested per-scope worktrees to the .agent scopes folder', async () => {
     const repoRoot = await mkdtemp(path.join(tmpdir(), 'agent-worktree-migrate-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.email', 'agent@example.com'], { cwd: repoRoot });
@@ -255,9 +252,9 @@ describe('agent worktree action', () => {
 
     await expect(stat(legacyRoot)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(resolved.worktreeRoot).toBe(
-      path.join(resolveExternalWorktreeBase(repoRoot), 'scopes', 'example-prd', 'scope-2'),
+      path.join(repoRoot, '.agent', 'worktrees', 'scopes', 'example-prd', 'scope-2'),
     );
-    expect(resolved.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(false);
+    expect(resolved.worktreeRoot.startsWith(`${repoRoot}${path.sep}`)).toBe(true);
     expect(stdout.trim()).toBe('agent/example-prd-scope-2');
   });
 });

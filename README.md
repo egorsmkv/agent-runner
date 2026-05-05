@@ -4,11 +4,18 @@ Made by Oleksii Bondarenko.
 
 Agent Runner is a repo-local `yarn agent` CLI for executing Markdown PRDs with
 Codex. It converts a human-readable PRD into YAML execution state, runs scoped
-implementation passes in external agent-owned git worktrees, verifies the resulting diff,
-runs quality gates, syncs completed checklist items back to Markdown, and creates
-local commits.
+implementation passes in agent-owned git worktrees under `.agent/worktrees/`,
+verifies the resulting diff, runs quality gates, syncs completed checklist items
+back to Markdown, and creates local commits.
 
 The runner is designed for local development workflows. It never pushes changes.
+
+## Requirements
+
+- Node.js with Yarn available in the repository.
+- Git repository checkout with permission to create local branches and worktrees.
+- `codex` CLI available on `PATH`.
+- Project-specific quality gate commands from the PRD available in the checkout.
 
 ## Quick Start
 
@@ -57,13 +64,16 @@ acceptance criteria, quality gates, and explicit out-of-scope items.
 yarn agent run --file <prd.md>
 ```
 
-Start over from a Markdown PRD, regenerate the YAML plan, then execute scopes.
+Start from a Markdown PRD, regenerate `.agent/<prd-slug>/plan.yaml`, then
+execute scopes until completion or a blocker. Use `--once` to stop after one
+completed scope.
 
 ```sh
 yarn agent resume
 ```
 
-Continue the previous interrupted or saved run from `.agent/` state.
+Continue the previous interrupted or saved run from `.agent/state.json` and the
+existing YAML plan.
 
 ```sh
 yarn agent plan-review [--file <prd.md>]
@@ -77,7 +87,8 @@ stale progress notes.
 
 - `--file`, `-f`: Markdown PRD file to run or review.
 - `--once`: Complete at most one scope.
-- `--parallel <n>`: Run up to `n` independent scopes in separate worktrees.
+- `--parallel <n>`: Run up to `n` dependency-ready scopes in separate worktrees.
+  Parallel selection skips scopes with overlapping `ownedFiles` patterns.
 - `--verbose-json`: Print raw Codex JSONL events.
 - `--dry-run`: Supported by `plan-review`; restores the original plan after
   review.
@@ -86,18 +97,36 @@ stale progress notes.
 
 1. `run` reads the Markdown PRD and generates YAML state under `.agent/`.
 2. The runner selects the next ready scope from YAML.
-3. Codex works in a sibling `.agent-worktrees/<repo-id>/...` checkout on branch
-   `agent/<prd-slug>`.
+3. Codex works in an `.agent/worktrees/...` checkout. Serial runs use branch
+   `agent/<prd-slug>`; parallel runs use per-scope branches named
+   `agent/<prd-slug>-<scope-id>`.
 4. Scope review checks whether the diff matches the active scope.
-5. Focused quality gates run in the worktree.
+5. Focused quality gates run in the worktree. Descriptive or manual gates are
+   reported separately and are not executed as shell commands.
 6. Completed checklist markers are synced back to the Markdown PRD.
 7. The scope is committed locally and cherry-picked back into the parent
    checkout when the parent checkout is clean.
-8. Final plan review and final quality gates run before acceptance.
+8. Plan review runs after completed scopes and may add missing scopes, reopen
+   stale scopes, clarify criteria, or compact stale progress notes.
+9. Final plan review and final quality gates run before acceptance.
 
-Runtime state and logs stay under `.agent/`, which is gitignored. Agent source
-worktrees live outside the repo in a sibling `.agent-worktrees/` directory so
-editors do not show a full duplicate checkout inside the project tree.
+Runtime state, logs, and agent source worktrees stay under `.agent/`, which is
+gitignored.
+
+## Runtime Files
+
+- `.agent/state.json`: recoverable run state for `resume`.
+- `.agent/<prd-slug>/plan.yaml`: YAML execution source of truth.
+- `.agent/<prd-slug>/logs/*.jsonl`: raw Codex JSON event logs.
+- `.agent/<prd-slug>/logs/*-last-message.txt`: final Codex messages.
+- `.agent/<prd-slug>/context/*.md`: generated scope context bundles.
+- `.agent/error.log`: appended top-level crash log.
+- `.agent/worktrees/<prd-slug>/`: serial source worktree.
+- `.agent/worktrees/scopes/<prd-slug>/<scope-id>/`: parallel source worktrees.
+
+If Codex returns a structured `ask_human` YAML block in its final message, the
+runner marks the active scope blocked and records the question, recommendation,
+and options in the YAML plan.
 
 ## Development Notes
 

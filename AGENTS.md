@@ -2,8 +2,9 @@
 
 ## Scope
 
-This folder implements the repo-local `yarn agent` CLI. Keep it independent of
-the React app and avoid importing application code from `src/`.
+This repository implements the repo-local `yarn agent` CLI. Keep the runner
+independent from any application it is installed beside: do not import
+application code from `src/` or other product directories.
 
 ## Architecture
 
@@ -13,6 +14,8 @@ the React app and avoid importing application code from `src/`.
 - `actions/` owns executable operations that commands can compose. These are not
   user-facing commands.
   - `actions/run/` owns the PRD execution loop.
+  - `actions/human-input/` owns structured human-input blocker parsing from
+    Codex final messages.
   - `actions/git/` owns git status and local commit operations.
   - `actions/state/` owns runtime state file paths and JSON state reads/writes.
   - `actions/worktree/` owns agent execution worktree creation/reuse.
@@ -65,12 +68,15 @@ the React app and avoid importing application code from `src/`.
 - Top-level crashes are appended to `.agent/error.log`; non-interrupt crashes
   restart once through `resume` when saved state exists.
 - Runtime files and logs stay under `.agent/` and are gitignored.
-- Source implementation runs in an external agent-owned git worktree under a
-  sibling `.agent-worktrees/<repo-id>/` directory on branch `agent/<prd-slug>`.
-  Keep `.agent` state in the main checkout, but run Codex, reviews, quality
-  gates, Markdown sync, and scope commits from the agent worktree so the user can
-  keep editing the main checkout manually without seeing a full duplicate source
-  checkout under `.agent/`.
+- Source implementation runs in agent-owned git worktrees under
+  `.agent/worktrees/`. Serial runs use `<slug>/` on branch `agent/<prd-slug>`;
+  parallel runs use `scopes/<slug>/<scope-id>/` on branch
+  `agent/<prd-slug>-<scope-id>`. Keep runtime state and source worktrees under
+  `.agent/`, and continue to gitignore `.agent/`.
+- Existing clean agent worktrees are synced to the parent checkout HEAD before
+  reuse. Dirty agent worktrees are left intact for repair/resume.
+- Legacy external worktrees under sibling `.agent-worktrees/` may be migrated
+  back into `.agent/worktrees/`.
 - Codex implementation passes treat YAML state as read-only. The runner and
   review actions own state mutations so execution does not depend on Codex being
   able to write outside the source worktree.
@@ -79,6 +85,15 @@ the React app and avoid importing application code from `src/`.
 - The runner may create local git commits after completed scopes, but it must
   never push.
 - Avoid destructive git commands in this folder.
+- Parent checkout cherry-picks are allowed only when the parent checkout is
+  clean. Failed cherry-picks must be aborted and reported, not left for the user
+  to unwind.
+- `--parallel` may run independent scopes only when dependencies are complete and
+  `ownedFiles` patterns do not overlap. Keep this conservative; parallelism must
+  not trade correctness for throughput.
+- Runnable quality gates are shell commands with known command prefixes. Manual
+  or descriptive gates should be reported as manual/skipped rather than
+  executed.
 
 ## Code Style
 
