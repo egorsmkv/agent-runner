@@ -109,6 +109,3 @@ editors do not show a full duplicate checkout inside the project tree.
 - `tests/` contains focused Vitest coverage.
 
 The Codex implementation model is fixed to `gpt-5.4` with medium reasoning.
-
-See [`USER_DOC.md`](USER_DOC.md) for the full developer guide, runtime file
-details, git behavior, PRD expectations, and troubleshooting notes.
