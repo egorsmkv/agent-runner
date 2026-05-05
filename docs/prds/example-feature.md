@@ -2,14 +2,14 @@
 
 ## Summary
 
-Build a small Node.js app with a React UI that renders news items from any
+Build a small Python app with a React UI that renders news items from any
 public RSS feed URL. The app should let a developer run one command locally,
-enter or select an RSS feed, fetch the feed through a Node backend, and browse
+enter or select an RSS feed, fetch the feed through a Python backend, and browse
 normalized article cards in the browser.
 
 ## Requirements
 
-- [ ] US-001: Create a Node HTTP API that accepts an RSS feed URL and returns
+- [ ] US-001: Create a Python HTTP API that accepts an RSS feed URL and returns
   normalized JSON news items.
 - [ ] US-002: Validate feed URLs before fetching and return clear client errors
   for missing, invalid, unreachable, or non-RSS feeds.
@@ -26,16 +26,16 @@ normalized article cards in the browser.
 
 ## Suggested Implementation
 
-- Use a Node backend endpoint such as `GET /api/feed?url=<encoded-feed-url>`.
+- Use a Python backend endpoint such as `GET /api/feed?url=<encoded-feed-url>`.
 - Keep RSS fetching and parsing logic isolated from the HTTP route handler.
 - Serve the React app from the same local development workflow when practical.
-- Prefer a maintained RSS parsing package over hand-rolled XML parsing.
+- Prefer a maintained Python RSS parsing package over hand-rolled XML parsing.
 - Keep the UI useful on desktop and mobile without requiring authentication or
   persistence.
 
 ## Quality Gates
 
-- yarn test
+- pytest
 - yarn build
 
 ## Example Feeds
