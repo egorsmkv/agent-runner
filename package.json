@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "agent": "node index.mjs",
+    "build": "node --check index.mjs && node --check server/*.mjs && node --check actions/*/index.mjs && node --check commands/*/index.mjs && node --check utils/*.mjs",
+    "start": "node server/index.mjs",
     "test": "vitest run"
   },
   "dependencies": {
